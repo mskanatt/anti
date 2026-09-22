@@ -9,7 +9,7 @@ services:
     name: anti-bullying-system
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && mkdir -p static/vendor && curl -o static/vendor/vosk.js https://unpkg.com/vosk-browser/dist/vosk.js
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /
     envVars:
@@ -31,3 +31,4 @@ services:
         sync: false
       - key: VAPID_CONTACT
         value: mailto:security@your-school.example
+        
