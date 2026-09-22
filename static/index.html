@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Anti-Bullying System — вход</title>
+<link rel="stylesheet" href="/static/css/style.css" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#2447a3" />
+</head>
+<body>
+<div class="shell">
+  <div class="brand-row">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name">Anti-Bullying System</div>
+      <div class="brand-sub">Ранее уведомление службы безопасности</div>
+    </div>
+  </div>
+
+  <div class="role-grid" role="tablist" aria-label="Выбор роли">
+    <button type="button" class="role-card active" id="role-staff" role="tab" aria-selected="true">
+      <div class="role-title">Администрация / Охрана</div>
+      <div class="role-desc">Вход по email и паролю. Доступ к ленте событий.</div>
+    </button>
+    <button type="button" class="role-card" id="role-device" role="tab" aria-selected="false">
+      <div class="role-title">Устройство</div>
+      <div class="role-desc">Привязка телефона как микрофона по коду от охраны.</div>
+    </button>
+  </div>
+
+  <div class="panel">
+    <div class="error-box" id="err"></div>
+    <div class="msg-box" id="msg"></div>
+
+    <!-- Формы для роли "Администрация" -->
+    <div id="staff-forms">
+      <form id="login-form">
+        <div class="field">
+          <label for="login-email">Email</label>
+          <input id="login-email" type="email" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="login-password">Пароль</label>
+          <input id="login-password" type="password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn-primary" id="login-btn">Войти</button>
+      </form>
+
+      <form id="register-form" style="display:none">
+        <div class="field">
+          <label for="reg-email">Рабочий email</label>
+          <input id="reg-email" type="email" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="reg-password">Пароль</label>
+          <input id="reg-password" type="password" minlength="10" autocomplete="new-password" required />
+          <div class="hint">Не менее 10 символов</div>
+        </div>
+        <div class="field">
+          <label for="reg-invite">Код приглашения школы</label>
+          <input id="reg-invite" type="text" required />
+          <div class="hint">Выдаётся руководителем службы безопасности</div>
+        </div>
+        <button type="submit" class="btn-primary" id="register-btn">Создать аккаунт</button>
+      </form>
+
+      <div class="switch-line">
+        <span id="switch-to-register-wrap">Нет аккаунта? <button type="button" id="switch-to-register">Зарегистрироваться</button></span>
+        <span id="switch-to-login-wrap" style="display:none">Уже есть аккаунт? <button type="button" id="switch-to-login">Войти</button></span>
+      </div>
+    </div>
+
+    <!-- Форма для роли "Устройство" -->
+    <div id="device-forms" style="display:none">
+      <form id="device-form">
+        <div class="field">
+          <label for="pairing-code">Код привязки</label>
+          <input id="pairing-code" type="text" placeholder="ABCD-2345" required />
+          <div class="hint">Получите его у администрации в разделе «Устройства»</div>
+        </div>
+        <div class="field">
+          <label for="device-location">Расположение (например, «Коридор 2 этаж»)</label>
+          <input id="device-location" type="text" required maxlength="120" />
+        </div>
+        <button type="submit" class="btn-primary" id="device-btn">Привязать устройство</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/api.js"></script>
+<script>
+const errBox = document.getElementById("err");
+const msgBox = document.getElementById("msg");
+function showError(text) { errBox.textContent = text; errBox.classList.add("show"); msgBox.classList.remove("show"); }
+function showMsg(text) { msgBox.textContent = text; msgBox.classList.add("show"); errBox.classList.remove("show"); }
+function clearNotices() { errBox.classList.remove("show"); msgBox.classList.remove("show"); }
+
+// Если уже есть сессия — сразу отправляем куда нужно.
+(function redirectIfLoggedIn() {
+  const role = API.getRole();
+  if (role === "staff" && API.getToken()) window.location.href = "/dashboard";
+  if (role === "device" && API.getToken()) window.location.href = "/device";
+})();
+
+const roleStaffBtn = document.getElementById("role-staff");
+const roleDeviceBtn = document.getElementById("role-device");
+const staffForms = document.getElementById("staff-forms");
+const deviceForms = document.getElementById("device-forms");
+
+function setRole(role) {
+  clearNotices();
+  const isStaff = role === "staff";
+  roleStaffBtn.classList.toggle("active", isStaff);
+  roleDeviceBtn.classList.toggle("active", !isStaff);
+  roleStaffBtn.setAttribute("aria-selected", String(isStaff));
+  roleDeviceBtn.setAttribute("aria-selected", String(!isStaff));
+  staffForms.style.display = isStaff ? "" : "none";
+  deviceForms.style.display = isStaff ? "none" : "";
+}
+roleStaffBtn.addEventListener("click", () => setRole("staff"));
+roleDeviceBtn.addEventListener("click", () => setRole("device"));
+
+const loginForm = document.getElementById("login-form");
+const registerForm = document.getElementById("register-form");
+document.getElementById("switch-to-register").addEventListener("click", () => {
+  loginForm.style.display = "none"; registerForm.style.display = "";
+  document.getElementById("switch-to-register-wrap").style.display = "none";
+  document.getElementById("switch-to-login-wrap").style.display = "";
+  clearNotices();
+});
+document.getElementById("switch-to-login").addEventListener("click", () => {
+  loginForm.style.display = ""; registerForm.style.display = "none";
+  document.getElementById("switch-to-register-wrap").style.display = "";
+  document.getElementById("switch-to-login-wrap").style.display = "none";
+  clearNotices();
+});
+
+loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  clearNotices();
+  const btn = document.getElementById("login-btn");
+  btn.disabled = true;
+  try {
+    const data = await API.post("/auth/login", {
+      email: document.getElementById("login-email").value.trim(),
+      password: document.getElementById("login-password").value,
+    });
+    API.setSession(data.access_token, "staff");
+    window.location.href = "/dashboard";
+  } catch (err) {
+    showError(err.status === 401 ? "Неверный email или пароль." : err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+registerForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  clearNotices();
+  const btn = document.getElementById("register-btn");
+  btn.disabled = true;
+  try {
+    const data = await API.post("/auth/register-staff", {
+      email: document.getElementById("reg-email").value.trim(),
+      password: document.getElementById("reg-password").value,
+      invite_code: document.getElementById("reg-invite").value.trim(),
+    });
+    API.setSession(data.access_token, "staff");
+    window.location.href = "/dashboard";
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("device-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  clearNotices();
+  const btn = document.getElementById("device-btn");
+  btn.disabled = true;
+  try {
+    const data = await API.post("/devices/register", {
+      pairing_code: document.getElementById("pairing-code").value.trim(),
+      location: document.getElementById("device-location").value.trim(),
+    });
+    // Долгоживущий токен устройства (для повторного входа) храним отдельно от короткого JWT.
+    localStorage.setItem("ab_device_token", data.device_token);
+    localStorage.setItem("ab_device_id", data.device_id);
+    API.setSession(data.access_token, "device");
+    window.location.href = "/device";
+  } catch (err) {
+    showError(err.status === 403 ? "Код привязки недействителен или истёк." : err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

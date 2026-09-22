@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Дашборд охраны — Anti-Bullying System</title>
+<link rel="stylesheet" href="/static/css/style.css" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#2447a3" />
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand-row" style="margin-bottom:0">
+    <div class="brand-mark" style="width:28px;height:28px">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="15" height="15">
+        <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name">Лента событий</div>
+      <div><span class="conn-dot" id="conn-dot"></span><span class="conn-label" id="conn-label">Подключение…</span></div>
+    </div>
+  </div>
+  <button class="btn-quiet" id="logout-btn">Выйти</button>
+</div>
+
+<div class="shell wide" style="padding-top:20px">
+  <div class="dash-grid">
+    <div>
+      <div class="filters">
+        <select id="f-device"><option value="">Все устройства</option></select>
+        <select id="f-status">
+          <option value="">Любой статус</option>
+          <option value="new">Новые</option>
+          <option value="handled">Обработано</option>
+          <option value="false_positive">Ложное срабатывание</option>
+        </select>
+        <input type="date" id="f-from" title="С даты" />
+        <input type="date" id="f-to" title="По дату" />
+        <button class="btn-quiet" id="f-reset">Сбросить</button>
+      </div>
+      <div id="event-list" class="event-list">
+        <div class="skeleton" style="height:70px"></div>
+        <div class="skeleton" style="height:70px"></div>
+        <div class="skeleton" style="height:70px"></div>
+      </div>
+    </div>
+
+    <div class="side-panel">
+      <div class="panel">
+        <h3 style="margin-bottom:10px;font-size:14px">Устройства</h3>
+        <div id="device-list"><div class="skeleton" style="height:16px;margin-bottom:8px"></div></div>
+      </div>
+
+      <div class="panel">
+        <h3 style="margin-bottom:10px;font-size:14px">Подключить устройство</h3>
+        <p style="font-size:12.5px;margin-bottom:12px">Создайте код и введите его на телефоне, который будет слушать помещение.</p>
+        <button class="btn-primary" id="gen-code-btn">Создать код привязки</button>
+        <div class="pairing-box" id="pairing-result" style="display:none;margin-top:14px">
+          <div class="pairing-code mono" id="pairing-code-text"></div>
+          <div style="font-size:12px;color:var(--ink-soft)">Действителен 24 часа</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3 style="margin-bottom:10px;font-size:14px">Push-уведомления</h3>
+        <p style="font-size:12.5px;margin-bottom:12px" id="push-desc">Получайте тревоги в браузере, даже если вкладка закрыта.</p>
+        <button class="btn-secondary" id="push-btn">Включить</button>
+      </div>
+
+      <div class="panel">
+        <h3 style="margin-bottom:10px;font-size:14px">Журнал доступа</h3>
+        <div class="overflow-x">
+          <div id="audit-list" style="font-size:12px;color:var(--ink-soft)">Загрузка…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/api.js"></script>
+<script>
+if (API.getRole() !== "staff" || !API.getToken()) window.location.href = "/";
+
+document.getElementById("logout-btn").addEventListener("click", () => {
+  API.clearSession();
+  window.location.href = "/";
+});
+
+const STATUS_LABEL = { new: "Новое", handled: "Обработано", false_positive: "Ложное срабатывание" };
+
+function eventCardHtml(ev) {
+  const pct = Math.round(ev.confidence * 100);
+  return `
+    <div class="event-card status-${ev.status}" id="ev-${ev.id}" data-id="${ev.id}">
+      <div class="event-top">
+        <div class="event-word">«${escapeHtml(ev.trigger_word)}» — ${escapeHtml(ev.device_location)}</div>
+        <div class="event-time">${fmtTime(ev.occurred_at)}</div>
+      </div>
+      <div class="event-meta">
+        <span class="status-pill ${ev.status}">${STATUS_LABEL[ev.status]}</span>
+        <span>Уверенность ${pct}%</span>
+        <span class="confidence-bar"><span style="width:${pct}%"></span></span>
+        ${ev.handled_by_email ? `<span>· ${escapeHtml(ev.handled_by_email)}</span>` : ""}
+      </div>
+      ${ev.status === "new" ? `
+      <div class="event-actions">
+        <button class="btn-secondary" data-action="handled" data-id="${ev.id}">Обработано</button>
+        <button class="btn-quiet" data-action="false_positive" data-id="${ev.id}">Ложное срабатывание</button>
+      </div>` : ""}
+    </div>`;
+}
+
+const listEl = document.getElementById("event-list");
+let currentEvents = [];
+
+function renderEvents() {
+  if (currentEvents.length === 0) {
+    listEl.innerHTML = `<div class="empty-state">Событий не найдено</div>`;
+    return;
+  }
+  listEl.innerHTML = currentEvents.map(eventCardHtml).join("");
+}
+
+function filters() {
+  const params = new URLSearchParams();
+  const device = document.getElementById("f-device").value;
+  const status = document.getElementById("f-status").value;
+  const from = document.getElementById("f-from").value;
+  const to = document.getElementById("f-to").value;
+  if (device) params.set("device_id", device);
+  if (status) params.set("status", status);
+  if (from) params.set("date_from", new Date(from).toISOString());
+  if (to) params.set("date_to", new Date(to + "T23:59:59").toISOString());
+  return params.toString();
+}
+
+async function loadEvents() {
+  try {
+    const qs = filters();
+    currentEvents = await API.get("/events" + (qs ? `?${qs}` : ""));
+    renderEvents();
+  } catch (err) {
+    listEl.innerHTML = `<div class="empty-state">Не удалось загрузить события: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+listEl.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    await API.patch(`/events/${btn.dataset.id}`, { status: btn.dataset.action });
+    await loadEvents();
+  } catch (err) {
+    alert(err.message);
+    btn.disabled = false;
+  }
+});
+
+["f-device", "f-status", "f-from", "f-to"].forEach((id) =>
+  document.getElementById(id).addEventListener("change", loadEvents)
+);
+document.getElementById("f-reset").addEventListener("click", () => {
+  document.getElementById("f-device").value = "";
+  document.getElementById("f-status").value = "";
+  document.getElementById("f-from").value = "";
+  document.getElementById("f-to").value = "";
+  loadEvents();
+});
+
+// ---- Устройства ----
+const deviceListEl = document.getElementById("device-list");
+const deviceSelect = document.getElementById("f-device");
+
+async function loadDevices() {
+  try {
+    const devices = await API.get("/devices");
+    if (devices.length === 0) {
+      deviceListEl.innerHTML = `<div style="font-size:12.5px;color:var(--ink-soft)">Пока нет привязанных устройств</div>`;
+    } else {
+      deviceListEl.innerHTML = devices.map((d) => `
+        <div class="device-row">
+          <span class="device-dot ${d.online ? "online" : ""}"></span>
+          <div class="device-info">
+            <div class="device-name">${escapeHtml(d.location)}</div>
+            <div class="device-sub">${d.online ? "В сети" : "Не в сети"}${d.is_active ? "" : " · отключено"}</div>
+          </div>
+        </div>`).join("");
+    }
+    const current = deviceSelect.value;
+    deviceSelect.innerHTML = `<option value="">Все устройства</option>` +
+      devices.map((d) => `<option value="${d.id}">${escapeHtml(d.location)}</option>`).join("");
+    deviceSelect.value = current;
+  } catch (err) {
+    deviceListEl.innerHTML = `<div style="font-size:12.5px;color:var(--alert)">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+document.getElementById("gen-code-btn").addEventListener("click", async (e) => {
+  e.target.disabled = true;
+  try {
+    const res = await API.post("/devices/pairing-codes", {});
+    document.getElementById("pairing-code-text").textContent = res.code;
+    document.getElementById("pairing-result").style.display = "";
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    e.target.disabled = false;
+  }
+});
+
+// ---- Журнал доступа ----
+async function loadAudit() {
+  const el = document.getElementById("audit-list");
+  try {
+    const rows = await API.get("/audit-log?limit=30");
+    if (rows.length === 0) { el.textContent = "Пусто"; return; }
+    el.innerHTML = rows.map((r) =>
+      `<div style="padding:5px 0;border-bottom:1px solid var(--line)">${fmtTime(r.created_at)} · ${escapeHtml(r.user_email)} · ${escapeHtml(r.action)}</div>`
+    ).join("");
+  } catch (err) {
+    el.textContent = "Не удалось загрузить журнал";
+  }
+}
+
+// ---- WebSocket живая лента ----
+const connDot = document.getElementById("conn-dot");
+const connLabel = document.getElementById("conn-label");
+let ws;
+let reconnectDelay = 1000;
+
+function connectWs() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${proto}//${location.host}/ws/alerts`);
+  ws.onopen = () => ws.send(JSON.stringify({ token: API.getToken() }));
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "ready") {
+      connDot.className = "conn-dot live";
+      connLabel.textContent = "Живая лента";
+      reconnectDelay = 1000;
+    } else if (msg.type === "event") {
+      const exists = currentEvents.some((e) => e.id === msg.event.id);
+      if (!exists && matchesFilters(msg.event)) {
+        currentEvents.unshift(msg.event);
+        renderEvents();
+        const card = document.getElementById(`ev-${msg.event.id}`);
+        if (card) card.classList.add("flash");
+      }
+      loadDevices();
+    } else if (msg.type === "event_updated") {
+      const idx = currentEvents.findIndex((e) => e.id === msg.event.id);
+      if (idx !== -1) {
+        currentEvents[idx] = msg.event;
+        renderEvents();
+      }
+    }
+  };
+  ws.onclose = () => {
+    connDot.className = "conn-dot down";
+    connLabel.textContent = "Переподключение…";
+    setTimeout(connectWs, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 1.6, 15000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+function matchesFilters(ev) {
+  const device = document.getElementById("f-device").value;
+  const status = document.getElementById("f-status").value;
+  if (device && ev.device_id !== device) return false;
+  if (status && ev.status !== status) return false;
+  return true;
+}
+
+// keepalive ping
+setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) ws.send("ping"); }, 25000);
+
+// ---- Web Push ----
+function b64ToUint8(b64) {
+  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+async function setupPush() {
+  const desc = document.getElementById("push-desc");
+  const btn = document.getElementById("push-btn");
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    desc.textContent = "Push-уведомления не поддерживаются этим браузером.";
+    btn.style.display = "none";
+    return;
+  }
+  let cfg;
+  try { cfg = await API.get("/push/public-key"); } catch { return; }
+  if (!cfg.enabled) {
+    desc.textContent = "Push отключён на сервере. Используются Telegram-уведомления.";
+    btn.style.display = "none";
+    return;
+  }
+  const reg = await navigator.serviceWorker.register("/sw.js");
+  const existing = await reg.pushManager.getSubscription();
+  if (existing) {
+    btn.textContent = "Включено";
+    btn.disabled = true;
+    return;
+  }
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { desc.textContent = "Уведомления не разрешены в браузере."; return; }
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: b64ToUint8(cfg.public_key),
+      });
+      const json = sub.toJSON();
+      await API.post("/push/subscribe", { endpoint: json.endpoint, keys: json.keys });
+      btn.textContent = "Включено";
+    } catch (err) {
+      desc.textContent = "Не удалось включить: " + err.message;
+      btn.disabled = false;
+    }
+  });
+}
+
+loadEvents();
+loadDevices();
+loadAudit();
+connectWs();
+setupPush();
+setInterval(loadDevices, 30000);
+</script>
+</body>
+</html>

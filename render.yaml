@@ -1,0 +1,33 @@
+databases:
+  - name: anti-bullying-db
+    plan: free
+    databaseName: antibullying
+    user: antibullying
+
+services:
+  - type: web
+    name: anti-bullying-system
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: STAFF_INVITE_CODE
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: anti-bullying-db
+          property: connectionString
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_CONTACT
+        value: mailto:security@your-school.example
