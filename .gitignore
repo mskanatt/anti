@@ -4,3 +4,4 @@ __pycache__/
 venv/
 static/models/*.tar.gz
 static/vendor/vosk.js
+app/routers/models/
